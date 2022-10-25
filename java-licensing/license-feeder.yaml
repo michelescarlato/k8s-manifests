@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: license-feeder
+  namespace: fasten
+spec:
+  replicas: 1
+  serviceName: "none"
+  selector:
+    matchLabels:
+      app: license-feeder
+  template:
+    metadata:
+      labels:
+        app: license-feeder
+    spec:
+      containers:
+        - name: license-feeder
+          image: ghcr.io/fasten-project/fasten/fasten.license.feeder.plugin:0.0.13
+          args: [
+              "-k", "$(KAFKA_ADDR)",
+              "-pl", "LicenseFeeder",
+              "-kt", "LicenseFeeder=fasten.LicenseDetector.out",
+              "-d", "mvn=$(PSQL_JAVA_DB)",
+              "--local_storage"
+          ]
+          volumeMounts:
+            - mountPath: /mnt/fasten/data/repos
+              name: repos
+          env:
+            - name: FASTEN_DBPASS
+              valueFrom:
+                secretKeyRef:
+                  key: psql.pwd
+                  name: psql-pwd
+            - name: PSQL_JAVA_DB
+              valueFrom:
+                configMapKeyRef:
+                  key: psql.java.db.url
+                  name: psql.java.db
+#            - name: PSQL_JAVA_DB
+#              valueFrom:
+#                configMapKeyRef:
+#                  key: url
+#                  name: psql.java.db.url.monster
+            - name: POD_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: KAFKA_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  key: kafka.addr
+                  name: kafka
+          # FIXME Adjust resource limits
+          resources:
+            requests:
+              memory: "8Gi"
+              cpu: "2000m"
+      # Don't schedule on lima, due to permissions bug
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: "kubernetes.io/hostname"
+                    operator: NotIn
+                    values: [ "lima" ]
+      imagePullSecrets:
+        - name: fasten.docker.registry
+      volumes:
+        - name: repos
+          hostPath:
+            path: /mnt/fasten/data/repos
+            type: Directory

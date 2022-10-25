@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: debian-license-detector
+  namespace: fasten
+spec:
+  replicas: 1
+  serviceName: "none"
+  selector:
+    matchLabels:
+      app: debian-license-detector
+  template:
+    metadata:
+      labels:
+        app: debian-license-detector
+    spec:
+      containers:
+        - name: fasten-debian-license-detector
+          image: ghcr.io/fasten-project/fasten.pipeline:0.0.12
+          args: [
+              "-k", "$(KAFKA_ADDR)",
+              "-pl", "DebianLicenseDetectorExtension",
+              "-kt", "DebianLicenseDetectorExtension=fasten.MetadataDBCExtension.out",
+              "--local_storage"
+          ]
+          volumeMounts:
+            - mountPath: /mnt/fasten/data/repos
+              name: repos
+          env:
+            - name: POD_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: KAFKA_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  key: kafka.addr
+                  name: kafka
+          # FIXME Adjust resource limits
+          resources:
+            requests:
+              memory: "8Gi"
+              cpu: "2000m"
+            limits:
+              memory: "8Gi"
+              cpu: "2000m"
+      # Don't schedule on lima, due to permissions bug
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: "kubernetes.io/hostname"
+                    operator: NotIn
+                    values: [ "lima" ]
+      imagePullSecrets:
+        - name: fasten.docker.registry
+      volumes:
+        - name: repos
+          hostPath:
+            path: /mnt/fasten/data/repos
+            type: Directory
